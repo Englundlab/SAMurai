@@ -1,5 +1,0 @@
-train: D:/LocalData/hashmial/YOLO/train_integrated/images
-val: D:/LocalData/hashmial/YOLO/val_integrated/images
-
-nc: 1
-names: ['cells']
