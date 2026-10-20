@@ -23,9 +23,9 @@ The default models must be present at:
 - `model/yolo/Model_2.pt`
 - `model/SAM/SAM.pth` 
 
-`model/yolo/Model_1.pt` is optional. When transferring this folder, include the weights but leave `.venv/` and generated outputs behind. Git excludes weights, so a Git clone alone will not contain them. Public model downloads and redistribution permissions remain pending.
+`model/yolo/Model_2.pt` is example of a trained YOLO model. See the training folder for example on how to train.
 
-- `model/SAM/SAM.pth` download the model from https://huggingface.co/HCMUE-Research/SAM-vit-h/blob/main/sam_vit_h_4b8939.pth
+`model/SAM/SAM.pth` download the model from https://huggingface.co/HCMUE-Research/SAM-vit-h/blob/main/sam_vit_h_4b8939.pth
 
 ```powershell
 .\.venv\Scripts\python.exe tools/verify_models.py
