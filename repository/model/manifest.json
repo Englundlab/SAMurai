@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "application_version": "0.10.6",
+  "models": [
+    {
+      "path": "yolo/Model_2.pt",
+      "bytes": 6269674,
+      "sha256": "fad5e012efdc609d799906101de76a12e5b9222aa9b89d6f5c8459c3b7b86ed8",
+      "role": "YOLO detection",
+      "default": true
+    },
+    {
+      "path": "yolo/Model_1.pt",
+      "bytes": 6269610,
+      "sha256": "838973ee8e35b73a8038258fc8bcd0a7c0d469d8a2adda53d250ffaf45302db2",
+      "role": "YOLO detection",
+      "default": false
+    },
+    {
+      "path": "SAM/SAM.pth",
+      "bytes": 2564550879,
+      "sha256": "a7bf3b02f3ebf1267aba913ff637d9a2d5c33d3173bb679e46d9f338c26f262e",
+      "role": "SAM mask segmentation",
+      "default": true
+    }
+  ]
+}

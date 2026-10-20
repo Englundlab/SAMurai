@@ -1,0 +1,25 @@
+{
+  "global_root": "..",
+  "project_directory": ".",
+  "paths": {
+    "yolo_model": "model/yolo/Model_2.pt",
+    "sam_model": "model/SAM/SAM.pth",
+    "outputs": "outputs"
+  },
+  "inference": {
+    "device": "auto",
+    "yolo_imgsz": 640,
+    "yolo_candidate_confidence": 0.15,
+    "confidence_threshold": 0.25,
+    "containment_threshold": 0.9,
+    "nms_iou": 0.5,
+    "manual_confidence": 1.0,
+    "sam_type": "vit_h",
+    "sam_batch_size": 1,
+    "yolo_weight": 0.6
+  },
+  "measurement": {
+    "pixel_size": 1.0,
+    "unit": "px"
+  }
+}
