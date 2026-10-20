@@ -1,6 +1,9 @@
 # SAMurai
 
-Local napari tool for YOLO detection, SAM segmentation, manual review, and measurement export. Version **0.10.6**.
+Local napari tool with YOLO detection, SAM segmentation, manual review, and measurement export. Version **0.10.6**.
+
+![image](https://github.com/Englundlab/SAMurai/blob/main/GUI%20display.png)
+
 
 ## Install on Windows
 
