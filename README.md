@@ -43,7 +43,7 @@ Paths in `app/workflow_config.json` are relative to this folder; no machine-spec
 Use a small representative 2D grayscale/RGB image, not a stack. Create a project outside this folder → detect → review boxes → approve SAM → edit/review masks → check pixel size and units → export. Reopen the saved project and confirm the edits and exported measurements. Record any errors and the computer's Python version and CPU/GPU mode.
 
 - `app/`: application and default configuration.
-- `model/`: weights and [verification manifest](https://github.com/Englundlab/SAMurai/repository/model/manifest.json).
+- `model/`: weights and [verification manifest](https://github.com/Englundlab/SAMurai/blob/main/repository/model/manifest.json).
 - `tests/` and `tools/`: automated checks and utilities.
 
 ## Validation
