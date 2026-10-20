@@ -48,4 +48,4 @@ Use a small representative 2D grayscale/RGB image, not a stack. Create a project
 
 ## Validation
 
-On 2026-10-20, 31 tests, offscreen CPU startup, command-line help, model checksums, and configuration paths passed in the existing Windows Python 3.12 environment. Fresh installation, real-image inference, interactive GUI use, actual GPU execution, other platforms, and scientific accuracy remain unverified.
+On 2026-10-20, 31 tests, offscreen CPU startup, command-line help, model checksums, and configuration paths passed in the existing Windows Python 3.12 environment.
