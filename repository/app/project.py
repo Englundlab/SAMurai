@@ -44,8 +44,8 @@ class Project:
         self.path = Path(path).resolve()
         self.root = self.path.parent
         manifest = json.loads(self.path.read_text(encoding='utf-8'))
-        if manifest.get('format') != 'spheroid-project' or manifest.get('version') != 1:
-            raise ValueError('Unsupported Spheroid project format.')
+        if manifest.get('format') not in ('samurai-project', 'spheroid-project') or manifest.get('version') != 1:
+            raise ValueError('Unsupported SAMurai project format.')
         self.items = manifest['images']
         if not self.items:
             raise ValueError('Project has no images.')
@@ -72,7 +72,7 @@ class Project:
                 shutil.copy2(source, destination)
                 items.append({'name': source.name, 'image': 'images/' + name,
                               'sha256': fingerprint(destination)})
-            manifest = {'format': 'spheroid-project', 'version': 1, 'images': items}
+            manifest = {'format': 'samurai-project', 'version': 1, 'images': items}
             (stage / 'project.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
             (stage / 'images').rename(folder / 'images')
             (stage / 'project.json').rename(folder / 'project.json')
@@ -172,6 +172,33 @@ class Project:
         return result
 
 
+def correct_pending(project, stop, progress):
+    """Optionally prepare unreviewed images without loading a detection model."""
+    completed = failed = 0
+    pending = [i for i, item in enumerate(project.summaries())
+               if item['status'] in ('pending', 'failed') and not item.get('corrected')]
+    for position, index in enumerate(pending):
+        if stop.is_set():
+            break
+        metadata, _ = project.load(index)
+        progress({'kind': 'batch', 'index': index, 'position': position + 1,
+                  'total': len(pending), 'completed': completed + failed,
+                  'stage': 'Correcting lighting', 'name': project.items[index]['name']})
+        try:
+            original = project.read_image(index)
+            radius = illumination_radius(original)
+            project.prepared_image(index, original, radius)
+            metadata.update(status='pending', corrected=True, radius=radius,
+                            preprocessing_set=True, error=None)
+        except Exception as exc:
+            metadata.update(status='failed', error=str(exc))
+            failed += 1
+        else:
+            completed += 1
+        project.save(index, metadata)
+    return completed, failed, stop.is_set()
+
+
 def detect_pending(project, engine, stop, progress):
     """Save each image before advancing; failures stay retryable; stop between images."""
     config = copy.deepcopy(engine.config)
@@ -188,19 +215,21 @@ def detect_pending(project, engine, stop, progress):
                 progress({'kind': 'batch', 'index': index, 'position': position + 1,
                           'total': len(pending), 'completed': completed + failed,
                           'stage': stage, 'name': item['name']})
-            report('Correcting lighting')
+            report('Loading image')
             previous, _ = project.load(index)
             metadata = dict(previous)
             try:
                 image = project.read_image(index)
-                radius = illumination_radius(image)
-                image = project.prepared_image(index, image, radius)
+                corrected = bool(previous.get('corrected'))
+                radius = previous.get('radius') if corrected else None
+                if corrected:
+                    image = project.prepared_image(index, image, radius)
                 report('Running YOLO')
                 boxes, scores, counts = engine.detect(image, keep_model=True)
                 prompts = {'boxes_xyxy': boxes.tolist(), 'confidence': scores.tolist(),
                            'source': ['yolo'] * len(scores), 'pending_delete': [False] * len(scores)}
                 metadata.update(status='detected', boxes=prompts, original_detections=copy.deepcopy(prompts),
-                                counts=counts, corrected=True, radius=radius, shape=list(image.shape),
+                                counts=counts, corrected=corrected, radius=radius, shape=list(image.shape),
                                 detection_config=config['inference'], yolo_model=identity, error=None,
                                 preprocessing_set=True)
                 project.save(index, metadata)

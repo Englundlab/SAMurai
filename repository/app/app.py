@@ -82,7 +82,7 @@ class DemoPanel(ProjectWorkflow, Navigation, MaskTools, QWidget):
         self.id_timer.timeout.connect(self.refresh_object_ids)
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
-        heading = QLabel("<b>Spheroid · image review</b>")
+        heading = QLabel("<b>SAMurai · image review</b>")
         root_layout.addWidget(heading)
         self.instructions = QLabel("Prepare images → review boxes → refine masks → export")
         self.instructions.setWordWrap(True)
@@ -112,8 +112,9 @@ class DemoPanel(ProjectWorkflow, Navigation, MaskTools, QWidget):
         self.model_name.setWordWrap(True)
         layout.addWidget(self.model_name)
         self.model_button = self.button(layout, "Change YOLO model…", self.choose_yolo_model)
-        self.detect_button = self.button(layout, "Run light correction + YOLO on this image", self.detect)
-        self.detect_button.setToolTip('Automatically correct lighting from the original image, then detect. Replaces current boxes and masks after confirmation.')
+        self.correction_button = self.button(layout, "Correct lighting on this image (optional)", self.correct_lighting)
+        self.detect_button = self.button(layout, "Run YOLO on this image", self.detect)
+        self.detect_button.setToolTip('Detect using the displayed image without additional light correction. Replaces current boxes and masks after confirmation.')
         layout.addStretch()
         layout = self.workflow_tab('Boxes')
         self.box_guidance = QLabel('Review the boxes, then confirm to run SAM.')
@@ -407,6 +408,7 @@ class DemoPanel(ProjectWorkflow, Navigation, MaskTools, QWidget):
                        *self.export_options.values()):
             widget.setEnabled(idle and not boundary)
         self.detect_button.setEnabled(idle and image and not boundary)
+        self.correction_button.setEnabled(idle and image and not boundary and not self.corrected)
         if self.project is not None:
             self.open_button.setEnabled(False)
         self.mask_advanced_toggle.setEnabled(idle and labels and not boundary)
@@ -488,7 +490,7 @@ class DemoPanel(ProjectWorkflow, Navigation, MaskTools, QWidget):
         self.image.editable = False
         self.viewer.reset_view()
         self.tabs.setCurrentIndex(0)
-        self.status.setText(f"Loaded {data.shape[1]} × {data.shape[0]}. Run YOLO; light correction is automatic.")
+        self.status.setText(f"Loaded {data.shape[1]} × {data.shape[0]}. Run YOLO directly, or optionally correct lighting first.")
         self.update_controls()
 
     def start_job(self, function, on_result):
@@ -526,31 +528,41 @@ class DemoPanel(ProjectWorkflow, Navigation, MaskTools, QWidget):
     def show_error(self, message):
         self.status.setText("Action failed. See details and retry.")
         dialog = QMessageBox(self)
-        dialog.setWindowTitle("Spheroid demo")
+        dialog.setWindowTitle("SAMurai demo")
         dialog.setText(message.strip().splitlines()[-1])
         dialog.setDetailedText(message)
         dialog.exec()
 
-    def detect(self):
+    def correct_lighting(self):
         if not self.discard_ok():
             return
         original = self.original.copy()
         project, index = self.project, self.project_index
         radius = illumination_radius(original)
-        def prepare_and_detect(progress):
-            progress('Correcting lighting automatically…')
+        def prepare(progress):
+            progress('Correcting lighting from the imported image…')
             image = project.prepared_image(index, original, radius) if project else illumination_correct(original, radius)
-            progress('Running YOLO on the corrected image…')
-            return image, radius, self.engine.detect(image)
-        self.status.setText('Preparing image and running YOLO…')
-        self.start_job(prepare_and_detect, self.prepared_detection_done)
+            return image, radius
+        self.start_job(prepare, self.correction_done)
 
-    def prepared_detection_done(self, result):
-        image, radius, detections = result
+    def correction_done(self, result):
+        image, radius = result
+        self.clear_results()
         self.image.data = image
         self.image.contrast_limits = (0, 1)
         self.corrected, self.applied_radius = True, radius
-        self.detection_done(detections)
+        if self.project is not None:
+            self.project_metadata = {'status': 'pending', 'preprocessing_set': True}
+            self.mark_project_changed()
+            self.save_project_current()
+        self.status.setText('Lighting corrected. Run YOLO when ready.')
+
+    def detect(self):
+        if not self.discard_ok():
+            return
+        image = self.image.data.copy()
+        self.status.setText('Running YOLO on the displayed image…')
+        self.start_job(lambda progress: self.engine.detect(image), self.detection_done)
 
     def choose_yolo_model(self):
         path, _ = QFileDialog.getOpenFileName(self, "Choose YOLO detection model", str(Path(self.config["resolved_paths"]["yolo_model"]).parent), "YOLO weights (*.pt)")
@@ -840,7 +852,7 @@ class DemoPanel(ProjectWorkflow, Navigation, MaskTools, QWidget):
         ids = np.unique(data[data > 0])
         self.mask_base_colors = {0: (0, 0, 0, 0), None: MASK_PALETTE[0]}
         self.mask_base_colors.update({int(i): MASK_PALETTE[(int(i)-1) % len(MASK_PALETTE)] for i in ids})
-        self.labels = self.viewer.add_labels(data, name="Editable spheroid masks", opacity=.42,
+        self.labels = self.viewer.add_labels(data, name="Editable object masks", opacity=.42,
             colormap=DirectLabelColormap(color_dict=self.mask_base_colors.copy()))
         self.labels.contour = 0
         self.labels.events.selected_label.connect(self.highlight_selected_object)
@@ -1152,9 +1164,9 @@ def main():
     config = load_config(args.config)
     if args.device:
         config['inference']['device'] = args.device
-    viewer = napari.Viewer(title="Spheroid segmentation — YOLO + SAM")
+    viewer = napari.Viewer(title="SAMurai segmentation — YOLO + SAM")
     panel = DemoPanel(viewer, config)
-    viewer.window.add_dock_widget(panel, name="Spheroid workflow", area="right")
+    viewer.window.add_dock_widget(panel, name="SAMurai workflow", area="right")
     # Keep Qt workers alive until they finish when the viewer is closed.
     from qtpy.QtWidgets import QApplication
     def shutdown():

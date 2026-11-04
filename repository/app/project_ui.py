@@ -11,7 +11,7 @@ from qtpy.QtWidgets import QFileDialog, QLabel, QComboBox, QProgressBar, QMessag
 
 from .core import Engine, illumination_radius
 from .box_history import BoxHistory
-from .project import Project, detect_pending, fingerprint
+from .project import Project, correct_pending, detect_pending, fingerprint
 from .review_queue import (box_signature, mask_signature, resolved_export_name, segment_approved, export_approved)
 
 STATES = {'pending': 'Waiting', 'failed': 'Needs attention', 'unreadable': 'Needs attention',
@@ -51,9 +51,10 @@ class ProjectWorkflow:
         self.project_summary = QLabel('No images imported')
         self.project_summary.setWordWrap(True)
         layout.addWidget(self.project_summary)
-        self.batch_button = self.button(layout, 'Run light correction + YOLO', self.start_batch)
+        self.correction_batch_button = self.button(layout, 'Correct lighting for all images (optional)', self.start_correction_batch)
+        self.batch_button = self.button(layout, 'Run YOLO for all images', self.start_batch)
         self.batch_button.setObjectName('primaryAction')
-        self.batch_help = QLabel('Lighting is corrected automatically for each image’s resolution. '
+        self.batch_help = QLabel('Already corrected images can go straight to YOLO. Optional light correction does not run detection. '
                                  'Completed detections are saved and skipped when you resume.')
         self.batch_help.setWordWrap(True)
         layout.addWidget(self.batch_help)
@@ -94,6 +95,9 @@ class ProjectWorkflow:
             widget.setEnabled(ready and self.project is not None)
         statuses = [item['status'] for item in self.project_summaries]
         self.batch_button.setEnabled(ready and any(s in ('pending', 'failed') for s in statuses))
+        self.correction_batch_button.setEnabled(ready and any(
+            item['status'] in ('pending', 'failed') and not item.get('corrected')
+            for item in self.project_summaries))
         self.continue_review_button.setEnabled(ready and any(s in REVIEW_STATES for s in statuses))
         self.previous_image_button.setEnabled(ready and self.project_index is not None and self.project_index > 0)
         self.next_image_button.setEnabled(ready and self.project_index is not None and self.project_index < len(statuses) - 1)
@@ -199,14 +203,14 @@ class ProjectWorkflow:
         if answer != QMessageBox.Ok:
             return
         folder, _ = QFileDialog.getSaveFileName(self, 'Create project — step 2: choose location and name the project folder',
-                                               str(Path.home() / 'Spheroid project'), options=QFileDialog.ShowDirsOnly)
+                                               str(Path.home() / 'SAMurai project'), options=QFileDialog.ShowDirsOnly)
         if not folder or not self.save_project_current() or (self.project is None and not self.discard_ok()):
             return
         self.status.setText('Copying images into the new project…')
         self.start_job(lambda progress: Project.create(folder, paths), lambda project: self.activate_project(project, discard_checked=True))
 
     def open_project(self):
-        path, _ = QFileDialog.getOpenFileName(self, 'Open Spheroid project', '', 'Spheroid project (project.json)')
+        path, _ = QFileDialog.getOpenFileName(self, 'Open SAMurai project', '', 'SAMurai project (project.json)')
         if path:
             try:
                 self.activate_project(Project(path))
@@ -273,7 +277,7 @@ class ProjectWorkflow:
             self.batch_progress.setRange(0, max(1, len(statuses)))
             self.batch_progress.setValue(prepared)
             self.batch_progress.setFormat(f'{prepared}/{len(statuses)} images prepared')
-            self.batch_button.setText('Run light correction + YOLO' if any(s in ('pending', 'failed') for s in statuses)
+            self.batch_button.setText('Run YOLO for all images' if any(s in ('pending', 'failed') for s in statuses)
                                       else 'All images prepared' if prepared == len(statuses) else 'Check images needing attention')
         self.refresh_queue_controls()
 
@@ -294,7 +298,7 @@ class ProjectWorkflow:
             self.save_state.setText('Saved in project')
         if self.exists(self.boxes):
             count = len(self.boxes.data)
-            legacy = ' These saved boxes used the original image. Re-run detection to use automatic correction.' if not self.corrected else ''
+            legacy = ' Detection used the imported image without additional light correction.' if not self.corrected else ''
             guidance = ('Boxes approved. Run the SAM queue when ready. Editing boxes requires approval again.'
                         if self.project_metadata.get('status') == 'ready_sam' and not self.project_changed
                         else f'{count} {"box" if count == 1 else "boxes"}. Review, then confirm for the SAM queue or run SAM now.')
@@ -456,13 +460,23 @@ class ProjectWorkflow:
         self.project_list.clear()
         self.project_title.setText('No batch project open')
         self.project_summary.setText('Import images or open a saved project')
-        self.batch_button.setText('Run light correction + YOLO')
+        self.batch_button.setText('Run YOLO for all images')
         self.batch_progress.setRange(0, 1)
         self.batch_progress.setValue(0)
         self.batch_progress.setFormat('Ready to prepare images')
         self.clear_results()
         self.tabs.setCurrentIndex(0)
         self.update_controls()
+
+    def start_correction_batch(self):
+        if self.project is None or self.busy or not self.save_project_current():
+            return
+        self.batch_stop.clear()
+        self.batch_running = True
+        self.queue_kind = 'correction'
+        self.batch_progress.setRange(0, 0)
+        self.status.setText('Correcting lighting; YOLO will run only when you choose it.')
+        self.start_job(lambda progress: correct_pending(self.project, self.batch_stop, progress), self.batch_done)
 
     def start_batch(self):
         if self.project is None or self.busy:
@@ -476,7 +490,7 @@ class ProjectWorkflow:
         engine = Engine(copy.deepcopy(self.config))
         self.tabs.setCurrentIndex(0)
         self.batch_progress.setRange(0, 0)
-        self.status.setText('Preparing images. Light correction and YOLO run automatically; keep the application open.')
+        self.status.setText('Running YOLO using each image’s saved preprocessing choice; keep the application open.')
         self.start_job(lambda progress: detect_pending(self.project, engine, self.batch_stop, progress), self.batch_done)
 
     def on_job_progress(self, message):
@@ -524,6 +538,9 @@ class ProjectWorkflow:
         else:
             self.tabs.setCurrentIndex(advance_tab if advance_tab is not None else 0)
             completed, failed, stopped = result
+            if self.queue_kind == 'correction':
+                self.status.setText(f'Light correction: {completed} completed, {failed} failed. Run YOLO when ready.')
+                return
             self.status.setText(f'Batch {"stopped" if stopped else "finished"}: {completed} detected, {failed} failed. '
                                 'Results saved. Select an image to review boxes and run SAM.')
 
