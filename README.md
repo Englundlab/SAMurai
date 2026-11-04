@@ -1,6 +1,6 @@
 # SAMurai
 
-Local napari tool with YOLO detection, SAM segmentation, manual review, and measurement export. Version **0.10.6**.
+Local napari tool with YOLO detection, SAM segmentation, manual review, and measurement export. Version **0.10.7**.
 
 ![image](https://github.com/Englundlab/SAMurai/blob/main/GUI%20display.png)
 
@@ -85,3 +85,9 @@ Run the automated tests:
 ```
 
 On 2026-10-20, 31 tests, offscreen CPU startup, command-line help, model checksums, and configuration paths passed in the existing Windows Python 3.12 environment.
+
+## Optional lighting correction (0.10.7)
+
+Use **Correct lighting for all images (optional)** only when the imported images need illumination correction. This saves corrected images without running a model. Then click **Run YOLO for all images**. For already corrected inputs, skip correction and run YOLO directly. Completed detections are preserved when resuming. The same separate actions are available for a single image.
+
+In box review, choose **Select / resize boxes**, then drag a selection rectangle or Shift-click to select several boxes. Press **Delete** to remove the selection immediately, or use **Mark / unmark for deletion** and then **Delete marked boxes**. Ctrl+Z undoes an edit.
