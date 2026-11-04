@@ -1,4 +1,4 @@
-"""Launch Spheroid in the current Python environment; never installs packages."""
+"""Launch SAMurai in the current Python environment; never installs packages."""
 import argparse
 import os
 from pathlib import Path
@@ -24,7 +24,7 @@ def gpu_works(python):
         return False
 
 def main():
-    parser = argparse.ArgumentParser(description="Spheroid segmentation")
+    parser = argparse.ArgumentParser(description="SAMurai segmentation")
     parser.add_argument('--config', default=str(ROOT / 'app' / 'workflow_config.json'))
     parser.add_argument('--device', choices=('auto', 'cpu', 'cuda'))
     options = parser.parse_args()
