@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-from app.project import Project, detect_pending
+from app.project import Project, correct_pending, detect_pending
 
 
 class FakeEngine:
@@ -92,13 +92,31 @@ class ProjectTests(unittest.TestCase):
         self.assertEqual(self.project.statuses(), ['detected'] * 3)
         self.assertEqual(detect_pending(self.project, engine, threading.Event(), lambda m: None), (0, 0, False))
 
-    def test_batch_always_corrects_pending_images(self):
-        self.project.save(0, {'status': 'pending', 'corrected': False, 'preprocessing_set': True})
-        with patch('app.project.illumination_correct', side_effect=lambda image, radius: image) as correct:
-            detect_pending(self.project, FakeEngine(self.model), threading.Event(), lambda m: None)
-        self.assertEqual(correct.call_count, 3)
-        self.assertTrue(self.project.load(0)[0]['corrected'])
-        self.assertTrue(self.project.load(1)[0]['corrected'])
+    def test_yolo_preserves_imported_pixels_without_correction(self):
+        received = []
+        engine = FakeEngine(self.model)
+        detect = engine.detect
+        def record(image, keep_model=False):
+            received.append(image.copy())
+            return detect(image, keep_model)
+        engine.detect = record
+        with patch('app.project.illumination_correct', side_effect=AssertionError('Unexpected correction')):
+            detect_pending(self.project, engine, threading.Event(), lambda m: None)
+        for i, image in enumerate(received):
+            np.testing.assert_array_equal(image, self.project.read_image(i))
+            self.assertFalse(self.project.load(i)[0]['corrected'])
+
+    def test_optional_correction_is_saved_before_detection(self):
+        stop = threading.Event()
+        result = correct_pending(self.project, stop, lambda m: None)
+        self.assertEqual(result, (3, 0, False))
+        self.assertEqual(self.project.statuses(), ['pending'] * 3)
+        self.assertNotIn('boxes', self.project.load(0)[0])
+        reopened = Project(self.project.path)
+        self.assertEqual(correct_pending(reopened, stop, lambda m: None), (0, 0, False))
+        detect_pending(reopened, FakeEngine(self.model), stop, lambda m: None)
+        self.assertTrue(all(reopened.load(i)[0]['corrected'] for i in range(3)))
+        self.assertEqual(correct_pending(reopened, stop, lambda m: None), (0, 0, False))
 
     def test_prepared_cache_matches_radius_and_rebuilds_damage(self):
         image = self.project.read_image(0)
@@ -117,6 +135,7 @@ class ProjectTests(unittest.TestCase):
         large = self.root / 'large.png'
         Image.fromarray(np.zeros((200, 300), dtype=np.uint8)).save(large)
         project = Project.create(self.root / 'sizes', [self.images[0], large])
+        correct_pending(project, threading.Event(), lambda m: None)
         detect_pending(project, FakeEngine(self.model), threading.Event(), lambda m: None)
         self.assertEqual([project.load(i)[0]['radius'] for i in range(2)], [0, 6])
 
